@@ -1,0 +1,77 @@
+#!/usr/bin/java --source 12
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class App {
+
+    private static String LAST_QUESTION;
+
+    private static final Pattern titlePattern = Pattern.compile("<title type=\"text\">(.+?)</title>");
+    private static final Pattern publishedPattern = Pattern.compile("<published>(.+?)</published>");
+
+    public static void main(String[] args) throws Exception {
+        while(true) {
+            String feed = getFeed();
+
+            Arrays.stream(feed.split("<entry>"))
+                    .map(App::toPost)
+                    .filter(Objects::nonNull)
+                    .sorted()
+                    .findFirst()
+                    .filter(post -> !post.title.equals(LAST_QUESTION))
+                    .ifPresent(App::setAndRun);
+            Thread.sleep(30_000);
+        }
+    }
+
+    static void setAndRun(Post post) {
+        LAST_QUESTION = post.title;
+        try {
+            Runtime.getRuntime().exec(new String[] { "osascript", "-e",
+                "display notification \"" + LAST_QUESTION + "\" with title \"StackOverflow\"" });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    static String getFeed() throws Exception {
+        URL u = new URL("https://stackoverflow.com/feeds/tag/java-8");
+        try (InputStream in = u.openStream()) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    static Post toPost(String raw) {
+        Matcher titleMatcher = titlePattern.matcher(raw);
+        Matcher publishedMatcher = publishedPattern.matcher(raw);
+        if(titleMatcher.find() && publishedMatcher.find()) {
+            String title = titleMatcher.group(1).replaceAll("<[^>]*>", "");
+            String published = publishedMatcher.group(1).replaceAll("<[^>]*>", "");
+            return new Post(title, Instant.parse(published));
+        }
+        return null;
+    }
+
+    static class Post implements Comparable<Post> {
+        String title;
+        Instant published;
+
+        Post(String title, Instant published) {
+            this.title = title;
+            this.published = published;
+        }
+
+        @Override
+        public int compareTo(Post o) {
+            return o.published.compareTo(published);
+        }
+    }
+}
